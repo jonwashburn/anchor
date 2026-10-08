@@ -1,0 +1,32 @@
+import Anchor
+
+/-! Sign-off gate fixture. `scripts/p3_gate.sh` copies one variant at a time over
+`AnchorTest/Signoff/Fixture.lean`, rebuilds it, and runs `anchor check`. -/
+
+namespace AnchorTest.Signoff
+
+/-- Twice `n`. -/
+def double (n : Nat) : Nat := n + n
+
+/-- `n` is twice something. -/
+def IsEvenish (n : Nat) : Prop := ∃ k, n = double k
+
+/-- Three times `n`; not on the surface of `double_evenish`. -/
+def unrelated (n : Nat) : Nat := n + n + n
+
+/-- Doubling a positive number gives a number that is twice something. -/
+theorem double_evenish (n : Nat) (h : 0 < n) : IsEvenish (double n) := ⟨n, rfl⟩
+
+theorem unrelated_one : unrelated 1 = 3 := rfl
+
+/-- Three, written as a sum. -/
+def three : Nat := 1 + 1 + 1
+
+/-- Three is the only natural number whose successor is four. -/
+@[pinned] theorem three_pinned : Anchor.Pinned (fun x : Nat => x + 1 = 4) Eq three :=
+  ⟨rfl, fun _ h => by unfold three; omega⟩
+
+/-- A number equal to three is positive. -/
+theorem three_pos (n : Nat) (h : n = three) : 0 < n := by subst h; decide
+
+end AnchorTest.Signoff
