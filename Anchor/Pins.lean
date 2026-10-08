@@ -2,7 +2,7 @@ import Mathlib
 import Anchor.Pinned
 
 /-!
-# Seed pins
+# Example pins
 
 Two Mathlib objects pinned by kernel-checked uniqueness theorems. A statement that mentions
 one of them can be read through its specification.

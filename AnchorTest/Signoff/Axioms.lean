@@ -5,7 +5,7 @@ import AnchorTest.Signoff.Fixture
 # What the sign-off machinery and its signed fixture rest on
 
 Compiled after `AnchorTest/Signoff/variants/V0_base.lean.txt` is copied to
-`AnchorTest/Signoff/Fixture.lean` and built, as the phase 3 gate does before signing.
+`AnchorTest/Signoff/Fixture.lean` and built, as `scripts/test_signoff.sh` does before signing.
 -/
 
 #print axioms AnchorTest.Signoff.double_evenish

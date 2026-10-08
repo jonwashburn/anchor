@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Phase 1 gate checker: compare `anchor_cert` JSON reports with the planted labels.
+"""Compare `anchor_cert` JSON reports with the planted labels.
 
-    python3 scripts/p1_check.py AnchorTest/planted_labels.json <lean output> [--census]
+    python3 scripts/check_labels.py AnchorTest/planted_labels.json <lean output> [--census]
 
 With `--census` the output is a census report file in which the planted statements are mixed
 among a corpus; reports for names outside the label file are ignored instead of failing.

@@ -1,6 +1,6 @@
 import Anchor
 
-/-! Sign-off gate fixture. `scripts/p3_gate.sh` copies one variant at a time over
+/-! Sign-off test fixture. `scripts/test_signoff.sh` copies one variant at a time over
 `AnchorTest/Signoff/Fixture.lean`, rebuilds it, and runs `anchor check`. -/
 
 namespace AnchorTest.Signoff
