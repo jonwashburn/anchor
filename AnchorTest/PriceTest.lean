@@ -8,7 +8,7 @@ One statement, `∀ n : Nat, n = 0 ∨ n ≠ 0`, proved three ways: by case anal
 entry point and the classical proofs must report theirs, so the reports differ.
 
 `trivially_true` is the empty input: its report is empty, and an empty report alone must never
-pass the gate.
+pass the test.
 
 `LibEM` is a library's own excluded middle, stated as a proposition and registered with
 `@[classical_entry]`. A proof that takes it as a hypothesis reports it with role `stated`.

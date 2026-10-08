@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Phase 3 gate: a sign-off goes stale exactly when its review surface changes.
+# The sign-off suite: a sign-off goes stale exactly when its review surface changes.
 #
-# Run from the root of a built anchor tree:  bash scripts/p3_gate.sh <receipt dir>
+# Run from the root of an anchor checkout:  bash scripts/test_signoff.sh <output dir>
 #
 # Two declarations are signed against the base fixture. Each variant is then copied over
 # AnchorTest/Signoff/Fixture.lean, rebuilt, and checked. The expected verdict of every
-# (variant, declaration) pair is written below before any run. The gate also requires that an
-# empty sign-off file fails, that a second full run prints byte-identical output, and that every
-# build exits 0.
+# (variant, declaration) pair is written below. The test also requires that an empty sign-off
+# file fails, that a second full run prints byte-identical output, and that every build
+# exits 0.
 set -u
-OUT="${1:?receipt dir}"
+OUT="${1:?output dir}"
 mkdir -p "$OUT"
-source ~/.elan/env
+if [ -f ~/.elan/env ]; then source ~/.elan/env; fi
 F=AnchorTest/Signoff/Fixture.lean
 V=AnchorTest/Signoff/variants
 S="$OUT/signoffs.jsonl"
@@ -46,10 +46,10 @@ run() {
   echo "[$tag] build V0 for signing: exit $?" >> "$OUT/exits.txt"
   rm -f "$S"
   lake env $BIN sign --module AnchorTest.Signoff.Fixture --decl AnchorTest.Signoff.double_evenish \
-    --reviewer gate --date 2026-10-08 --file "$S" \
+    --reviewer test --date 2026-10-08 --file "$S" \
     --sentence "Doubling a positive natural number gives a number of the form double k." >> "$res" 2>&1
   lake env $BIN sign --module AnchorTest.Signoff.Fixture --decl AnchorTest.Signoff.three_pos \
-    --reviewer gate --date 2026-10-08 --file "$S" \
+    --reviewer test --date 2026-10-08 --file "$S" \
     --sentence "Any natural number equal to three is positive." >> "$res" 2>&1
   while read -r variant want1 want2; do
     cp "$V/$variant.lean.txt" "$F"
@@ -83,5 +83,5 @@ else
   echo "second run DIFFERS" >> "$OUT/verdicts.txt"; fail=1
 fi
 lake build AnchorTest.Signoff.Fixture > /dev/null 2>&1
-if [ "$fail" = 0 ]; then echo "P3 GATE: PASS" | tee -a "$OUT/verdicts.txt"; else echo "P3 GATE: FAIL" | tee -a "$OUT/verdicts.txt"; fi
+if [ "$fail" = 0 ]; then echo "SIGN-OFF SUITE: PASS" | tee -a "$OUT/verdicts.txt"; else echo "SIGN-OFF SUITE: FAIL" | tee -a "$OUT/verdicts.txt"; fi
 exit $fail

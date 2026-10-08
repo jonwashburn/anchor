@@ -1,22 +1,23 @@
 #!/usr/bin/env bash
-# Phase 1 gate: every planted label recovered with its Lean proof, twice, identically.
+# The planted suite: every planted label recovered with its Lean proof, twice, identically.
 #
-# Run from a built anchor checkout:
-#   bash scripts/p1_gate.sh <receipt dir> AnchorTest/supplied/planted_supplied.jsonl
+# Run from the root of an anchor checkout:
+#   bash scripts/test_planted.sh <output dir> AnchorTest/supplied/planted_supplied.jsonl
 #
 # The planted statements are analysed by the census runner (one Lean process per statement),
-# with the maker's kernel-checked answers for the search residue passed as <supplied.jsonl>.
-# The gate passes only if both runs recover all 40 labels, the two outputs are byte-identical,
-# and every control fails: an empty output, an empty label file, five mutated labels, the same
-# suite run without the supplied proofs, and a supplied proof of the wrong statement
-# (AnchorTest/SuppliedTest.lean), which Anchor must refuse, and a search proof that rests on
-# Lean.ofReduceBool (AnchorTest/NativeTest.lean), which must leave its obligations open.
-# P1_JOBS sets the width (default 40).
+# with kernel-checked proofs for five obligations the search leaves open passed as
+# <supplied.jsonl>. The test passes only if both runs recover all 40 labels, the two outputs
+# are byte-identical, and every control fails: an empty output, an empty label file, five
+# mutated labels, the same suite run without the supplied proofs, a supplied proof of the
+# wrong statement (AnchorTest/SuppliedTest.lean), which Anchor must refuse, and a search proof
+# that rests on Lean.ofReduceBool (AnchorTest/NativeTest.lean), which must leave its
+# obligations open. ANCHOR_JOBS sets the number of Lean processes (default: one per core).
 set -u
-OUT="${1:?receipt dir}"
+OUT="${1:?output dir}"
 SUP="${2:?supplied.jsonl}"
+JOBS="${ANCHOR_JOBS:-$(getconf _NPROCESSORS_ONLN)}"
 mkdir -p "$OUT"
-source ~/.elan/env
+if [ -f ~/.elan/env ]; then source ~/.elan/env; fi
 L=AnchorTest/planted_labels.json
 LP=$(lake env printenv LEAN_PATH)
 NAMES="$OUT/planted_names.txt"
@@ -32,7 +33,7 @@ lake env lean --version >> "$OUT/exits.txt"
 census() {  # <dir> [census args]
   local d="$1"; shift
   python3 scripts/census.py --corpus planted --names "$NAMES" --imports AnchorTest.Planted \
-    --lean-path "$LP" --out "$d" --jobs "${P1_JOBS:-40}" --shards 40 --attempt-heartbeats 2000000 "$@" \
+    --lean-path "$LP" --out "$d" --jobs "$JOBS" --shards 40 --attempt-heartbeats 2000000 "$@" \
     > "$d.log" 2>&1
 }
 for run in 1 2; do
@@ -42,15 +43,16 @@ for run in 1 2; do
 done
 if cmp -s "$OUT/run1/planted.jsonl" "$OUT/run2/planted.jsonl"; then note "run 1 and run 2 byte-identical"
 else note "run 1 and run 2 DIFFER"; fail=1; fi
-sha256sum "$OUT/run1/planted.jsonl" "$OUT/run2/planted.jsonl" >> "$OUT/exits.txt"
+if command -v sha256sum > /dev/null; then SHA=sha256sum; else SHA="shasum -a 256"; fi
+$SHA "$OUT/run1/planted.jsonl" "$OUT/run2/planted.jsonl" >> "$OUT/exits.txt"
 for run in 1 2; do
-  python3 scripts/p1_check.py "$L" "$OUT/run$run/planted.jsonl" > "$OUT/check_run$run.txt" 2>&1
-  e=$?; note "p1_check run $run: exit $e (want 0): $(tail -1 "$OUT/check_run$run.txt")"
+  python3 scripts/check_labels.py "$L" "$OUT/run$run/planted.jsonl" > "$OUT/check_run$run.txt" 2>&1
+  e=$?; note "check_labels run $run: exit $e (want 0): $(tail -1 "$OUT/check_run$run.txt")"
   [ "$e" = 0 ] || fail=1
 done
 
 control() {  # <name> <labels> <output>
-  python3 scripts/p1_check.py "$2" "$3" > "$OUT/control_$1.txt" 2>&1
+  python3 scripts/check_labels.py "$2" "$3" > "$OUT/control_$1.txt" 2>&1
   local e=$?
   note "control $1: exit $e (want nonzero): $(tail -1 "$OUT/control_$1.txt")"
   [ "$e" != 0 ] || fail=1
@@ -91,6 +93,6 @@ else
   note "control native_decide: NOT refused"; fail=1
 fi
 
-if [ "$fail" = 0 ]; then note "P1 GATE PASS"; else note "P1 GATE FAIL"; fi
+if [ "$fail" = 0 ]; then note "PLANTED SUITE: PASS"; else note "PLANTED SUITE: FAIL"; fi
 cat "$OUT/exits.txt"
 exit "$fail"

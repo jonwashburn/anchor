@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: leanprover/lean-action@v1
+        with:
+          build-args: >-
+            Anchor anchor AnchorTest.Planted AnchorTest.PlantedKey AnchorTest.Smoke
+            AnchorTest.SHA256Test AnchorTest.SurfaceTest AnchorTest.PriceTest
+            AnchorTest.SuppliedTest AnchorTest.NativeTest AnchorTest.Findings
+
+      - name: Sign-off check rejects an empty file
+        run: |
+          : > empty.jsonl
+          set +e
+          lake exe anchor check --file empty.jsonl
+          code=$?
+          set -e
+          test "$code" = 2

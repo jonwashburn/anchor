@@ -57,7 +57,7 @@ The same notions exist over an arbitrary index type as `Anchor.Statement`.
 
 ### How obligations are discharged
 
-For each obligation Anchor tries, in order: a declaration already supplied under the obligation's name; for `Drop k`, the original proof term, when it is a lambda over every binder whose body and later binder types never use hypothesis `k`; then a deterministic search that builds candidate models from small literals and instances and closes the resulting goals with `decide`, `norm_num`, `simp`, `omega` and `positivity`, under a fixed heartbeat budget per obligation. Search is deterministic: the same input gives byte-identical output.
+For each obligation Anchor tries, in order: a declaration already supplied under the obligation's name; for `Drop k`, the original proof term, when it is a lambda over every binder whose body and later binder types never use hypothesis `k`; then a search that builds candidate models from small literals and instances and closes the resulting goals with `decide`, `norm_num`, `simp`, `omega`, `linarith`, `positivity` and `grind`. When no small candidate works, Plausible's random testing proposes one, with a fixed seed. A universal goal (`Drop k`, `Vacuous`) goes to the same closers after `push_neg` and `intro`, then to `nlinarith`, `order` and `aesop`. Every attempt runs under a fixed heartbeat budget (`anchor.search.attemptHeartbeats` for a whole obligation), so the same input gives byte-identical output.
 
 ## 4. Verdicts
 
@@ -69,10 +69,11 @@ For each obligation Anchor tries, in order: a declaration already supplied under
 | `DECORATIVE [k, ...]` | a model exists, and `foo.anchorDrop_k` was added for each listed position |
 | `TRIVIAL CONCLUSION (...)` | `foo.anchorTrivial` was added: the conclusion holds of every model, so every hypothesis is removable |
 | `NO HYPOTHESES (no certificate)` | nothing to certify; the conclusion stands alone |
+| `NONVACUOUS, EVERY HYPOTHESIS LOAD-BEARING (statement only)` | no proof of the theorem is read (it is `sorry`), so `Holds` is unavailable; `Nonvacuous` and every `LoadBearing k` were proved |
 | `UNCERTIFIED (...)` | some obligation is neither proved nor refuted; the parenthesis lists which, and any hypotheses proved removable |
 | `UNSUPPORTED (...)` | the statement could not be extracted; the reason is given |
 
-Only the first five verdicts are claims, and each names the declarations that prove it. An uncertified result is a gap in the search, never a finding.
+Every verdict except `NO HYPOTHESES`, `UNCERTIFIED` and `UNSUPPORTED` is a claim, and the report names the declarations that prove it. An `UNCERTIFIED` verdict marks a gap in the search, never a finding; the hypotheses it lists as removable are proved.
 
 ## 5. The report
 

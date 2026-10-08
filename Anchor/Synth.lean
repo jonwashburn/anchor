@@ -11,9 +11,11 @@ Deterministic search for the proofs a certificate needs.
   variables: `∃ x y, H₁ ∧ H₂`, `¬ ∃ x, …`, `∀ x, H₁ → C`.
 * `anchor_search` proves an existential goal by trying small candidate values for each
   variable in turn and closing what remains with `decide`, `norm_num`, `simp`, `omega`,
-  `linarith`, `positivity` and `grind`; a universal or negated goal goes straight to the
-  closers after `push_neg` and `intro`. Every attempt runs under a fixed heartbeat budget,
-  so the search gives the same answer on every run.
+  `linarith`, `positivity` and `grind`; when no small candidate works, Plausible's random
+  testing, with a fixed seed, proposes one. A universal or negated goal goes straight to the
+  closers after `push_neg` and `intro`, then to `nlinarith`, `order` and `aesop`. Every
+  attempt runs under a fixed heartbeat budget, so the search gives the same answer on every
+  run.
 
 A found witness is only a proposal: the obligation counts once the kernel accepts the
 proof term.

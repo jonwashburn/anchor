@@ -9,7 +9,7 @@ timeouts and wall time. `NAME=first.jsonl+second.jsonl` reads a corpus finished 
 after `census_collect.py` collected a stopped first run; no statement may appear in both. A `--repeat` is a second run of the same corpus into a fresh directory;
 the report states whether the two are byte-identical, and otherwise whether every differing line
 is an error line that differs only in the elapsed seconds its message states. With `--labels`, planted statements found
-inside the runs are judged exactly as `p1_check.py` judges them, and kept out of the corpus counts.
+inside the runs are judged exactly as `check_labels.py` judges them, and kept out of the corpus counts.
 
 A finding is reported only when the report names the declaration that proves it and lists that
 declaration's axioms, all among propext, Classical.choice and Quot.sound. The kernel checked
@@ -37,7 +37,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from p1_check import judge  # noqa: E402
+from check_labels import judge  # noqa: E402
 
 STD_ORDER = ["propext", "Classical.choice", "Quot.sound"]
 STD = set(STD_ORDER)
@@ -508,7 +508,7 @@ details{margin:.4em 0}summary{cursor:pointer;font-weight:600}
     if p:
         out.append("<h2>Planted statements inside the census</h2>")
         out.append(f"<p>{p['recovered']} of {p['total']} planted labels recovered, judged by "
-                   "the Phase 1 rule. The planted statements were mixed into the runs and "
+                   "the rule in <code>check_labels.py</code>. The planted statements were mixed into the runs and "
                    "analysed by the same processes under the same settings.</p><table>"
                    "<tr><th>Statement</th><th>Label</th><th>Result</th></tr>")
         for r in p["rows"]:

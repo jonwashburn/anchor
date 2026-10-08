@@ -12,7 +12,7 @@ require mathlib from git "https://github.com/leanprover-community/mathlib4.git"
 @[default_target]
 lean_lib Anchor where
 
-/-- The planted suite, the census drivers and the demo. -/
+/-- The planted suite, the tests, the findings and the Mathlib census driver. -/
 lean_lib AnchorTest where
 
 /-- `lake exe anchor check`: list sign-offs whose review surface changed. -/
