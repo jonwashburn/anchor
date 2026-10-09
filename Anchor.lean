@@ -1,5 +1,6 @@
 import Anchor.Core
 import Anchor.Extract
+import Anchor.Opaque
 import Anchor.Synth
 import Anchor.Command
 import Anchor.Census

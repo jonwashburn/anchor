@@ -141,7 +141,7 @@ def universalClosers : TacticM (Array Syntax) := do
   return #[← `(tactic| nlinarith), ← `(tactic| (intro h; simp_all <;> done)),
     ← `(tactic| (intro h; omega)), ← `(tactic| (intro h; linarith)),
     ← `(tactic| (intro h; nlinarith)), ← `(tactic| order), ← `(tactic| anchor_nlinarith),
-    ← `(tactic| (intro h; anchor_nlinarith)), ← `(tactic| aesop)]
+    ← `(tactic| (intro h; anchor_nlinarith)), ← `(tactic| aesop), ← `(tactic| trivial)]
 
 /-- Try each tactic on the main goal; succeed with the first that closes it. Each tactic gets
 `hb` thousand heartbeats, the leaf budget unless the caller gives another. -/
@@ -172,7 +172,23 @@ def candidates (α : Expr) : MetaM (Array Term) := do
   if (← isClass? α).isSome then
     return #[← `(inferInstance)]
   if α.isForall then
-    return #[← `(fun _ => 0), ← `(fun _ => 1), ← `(fun x => x), ← `(fun x => -x),
+    -- Predicates, type families and functions of several arguments, as vocabulary read as
+    -- parameters produces them (`AssumptionA : X → Prop`, `Regret : ℝ → X → ℝ`): constant
+    -- functions first.
+    let (arity, cod) ← forallTelescopeReducing α fun xs cod => return (xs.size, cod)
+    let constFun (b : Term) : MetaM Term := do
+      let mut t := b
+      for _ in [0:arity] do t ← `(fun _ => $t)
+      return t
+    if cod.isProp then
+      return #[← constFun (← `(True)), ← constFun (← `(False))]
+    if cod.isSort then
+      return #[← constFun (← `(Nat)), ← constFun (← `(Unit))]
+    let mut consts : Array Term := #[]
+    if arity ≥ 2 then
+      consts := #[← constFun (← `(0)), ← constFun (← `(1)), ← constFun (← `(-1)),
+        ← constFun (← `(2))]
+    return consts ++ #[← `(fun _ => 0), ← `(fun _ => 1), ← `(fun x => x), ← `(fun x => -x),
       ← `(fun x => x + 1), ← `(fun x => 2 * x), ← `(fun x => x ^ 2), ← `(fun _ => -1),
       ← `(fun x => x ^ 3), ← `(fun x => 1 - x)]
   return #[← `(0), ← `(1), ← `(-1), ← `(2), ← `(-2), ← `(3), ← `(1 / 2), ← `(-1 / 2),

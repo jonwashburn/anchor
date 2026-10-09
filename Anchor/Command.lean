@@ -1,5 +1,6 @@
 import Anchor.Extract
 import Anchor.Synth
+import Anchor.Opaque
 
 /-!
 # `#anchor` and `anchor_cert`
@@ -23,7 +24,10 @@ obligation names (`foo.anchorNonvacuous`, `foo.anchorLoadBearing_k`, `foo.anchor
 
 A declaration whose proof contains `sorryAx` directly, or a definition whose value is a
 proposition, is read as a statement only: the report covers the statement's hypotheses and
-makes no claim that it holds.
+makes no claim that it holds. A definition of a family of propositions,
+`def foo (x : α) : Prop := body`, states `∀ x, body`. A statement that names opaque constants
+declared outside the trusted libraries is analysed with that vocabulary read as parameters
+(`Anchor.Opaque.generalize`), also as a statement only, and the report lists them.
 -/
 
 open Lean Meta Elab Command Term Tactic
@@ -79,6 +83,8 @@ structure Report where
   model : Array String := #[]
   /-- `Prop` arguments kept in the model because the statement depends on them; untested. -/
   premises : Array String := #[]
+  /-- Opaque constants read as universally quantified parameters. -/
+  parameters : Array String := #[]
   hyps : Array HypReport := #[]
   conclusion : String := ""
   holds : String := ""
@@ -96,6 +102,7 @@ def Report.toJson (r : Report) : Json :=
     ("reason", Json.str r.reason), ("universes", Json.str r.universes),
     ("model", Json.arr (r.model.map Json.str)),
     ("premises", Json.arr (r.premises.map Json.str)),
+    ("parameters", Json.arr (r.parameters.map Json.str)),
     ("hypotheses", Json.arr (r.hyps.map fun h => Json.mkObj [
       ("text", Json.str h.text), ("load_bearing", h.loadBearing.toJson),
       ("drop", h.drop.toJson)])),
@@ -111,6 +118,8 @@ def Report.render (r : Report) : String := Id.run do
     return out ++ s!"  verdict: UNSUPPORTED ({r.reason})\n"
   if !r.universes.isEmpty then
     out := out ++ s!"  universes: {r.universes}\n"
+  if !r.parameters.isEmpty then
+    out := out ++ s!"  opaque vocabulary read as parameters: {" ".intercalate r.parameters.toList}\n"
   out := out ++ s!"  model: {if r.model.isEmpty then "(none)" else " ".intercalate r.model.toList}\n"
   if !r.premises.isEmpty then
     out := out ++ s!"  premises in the model (untested): {" ".intercalate r.premises.toList}\n"
@@ -246,8 +255,22 @@ def statementOf (c : Name) : MetaM (Expr × Option Expr) := do
       let usesSorry := (d.value.find? (·.isConstOf ``sorryAx)).isSome
       return (inst d.type, if usesSorry then none else some (Lean.mkConst c us))
     if d.type.isProp then return (inst d.value, none)
+    let family ← forallTelescope (inst d.type) fun xs cod => do
+      if cod.isProp then
+        return some (← mkForallFVars xs (mkAppN (inst d.value) xs).headBeta)
+      return none
+    if let some s := family then return (s, none)
     return (inst d.type, none)
   | i => return (inst i.type, none)
+
+/-- `statementOf`, with opaque vocabulary read as parameters when the statement has any. The
+third component lists that vocabulary; when it is nonempty no proof is read, since a proof of
+the statement as written is not a proof of the generalized one. -/
+def readStatement (c : Name) : MetaM (Expr × Option Expr × Array Name) := do
+  let (stmt, proof?) ← statementOf c
+  match ← Opaque.generalize stmt with
+  | some (g, cs) => return (g, none, cs)
+  | none => return (stmt, proof?, #[])
 
 /-- Add a theorem to the environment; the kernel checks it here. -/
 def addThm (name : Name) (lps : List Name) (type value : Expr) : TermElabM Unit := do
@@ -258,8 +281,9 @@ def analyze (c : Name) : TermElabM Report := do
   let info ← getConstInfo c
   let lps : List Name := []
   let lvls : List Level := []
-  let (stmt, proof?) ← statementOf c
-  let mut r : Report := { decl := c, universes := levelsText info }
+  let (stmt, proof?, vocab) ← readStatement c
+  let mut r : Report :=
+    { decl := c, universes := levelsText info, parameters := vocab.map toString }
   let res ← Extract.extract stmt
   let .ok e := res
     | let why := match res with | .error u => u.describe | .ok _ => ""
@@ -294,13 +318,38 @@ def analyze (c : Name) : TermElabM Report := do
     holdsC := some (Lean.mkConst holdsName lvls)
     added := added.push holdsName
     r := { r with holds := s!"from the proof of {c}" }
-  | none => r := { r with holds := "statement only: no proof is read" }
+  | none => r := { r with holds :=
+      if vocab.isEmpty then "statement only: no proof is read"
+      else "statement only: opaque vocabulary read as parameters" }
   let n := e.hyps.size
-  if n == 0 then
-    r := { r with verdict := "NO HYPOTHESES (no certificate)" }
-    return { r with axioms := ← added.mapM fun d => return (d, ← axiomsOf d) }
   let ob (head : Name) (args : Array Expr) (onLit : Bool) : Expr :=
     mkAppN (Lean.mkConst head [lvl]) (#[M, if onLit then e.spec else specC] ++ args)
+  -- A proof Anchor finds counts only when it rests on the standard axioms. A search that
+  -- closes a goal with a library lemma proved by `native_decide` adds its theorem, but the
+  -- obligation stays open with the reason.
+  let nonstandard (n : Name) : TermElabM (List Name) := do
+    return ((← axiomsOf n).filter (!standardAxioms.contains ·)).toList
+  let record (nm : Name) (ty : Expr) (f : Found) : TermElabM (Except String Expr) := do
+    addThm (c ++ nm) lps ty f.proof
+    let bad ← nonstandard (c ++ nm)
+    if bad.isEmpty then return .ok (Lean.mkConst (c ++ nm) lvls)
+    return .error s!"the proof found rests on {bad}"
+  -- A conclusion true of every model: every hypothesis is removable at once.
+  let conclAt (s : Expr) : TermElabM Expr := withLocalDeclD `m M fun m =>
+    mkForallFVars #[m] (mkApp (mkApp2 (Lean.mkConst ``Anchor.Spec.concl [lvl]) M s) m)
+  if n == 0 then
+    -- With no hypothesis there is nothing to certify, but a conclusion that holds outright
+    -- (`True`, or a definition that unfolds to it) says nothing, and that is a finding.
+    let (tf?, tg) ← attempt (← conclAt e.spec) modelNames
+    r := { r with verdict := "NO HYPOTHESES (no certificate)", trivial := .notFound tg }
+    if let some f := tf? then
+      match ← record `anchorTrivial (← conclAt specC) f with
+      | .ok _ =>
+        added := added.push (c ++ `anchorTrivial)
+        r := { r with trivial := .proved "search" "",
+                      verdict := "TRIVIAL CONCLUSION (true outright, with no hypotheses)" }
+      | .error why => r := { r with trivial := .notFound why }
+    return { r with axioms := ← added.mapM fun d => return (d, ← axiomsOf d) }
   -- A proof supplied under the obligation's name is used first. It must have the obligation
   -- as its type and rest on the standard axioms only; otherwise the obligation stays open,
   -- with the reason, and nothing else is tried under that name.
@@ -312,16 +361,6 @@ def analyze (c : Name) : TermElabM Report := do
     if !bad.isEmpty then return some (.error s!"rests on {bad.toList}")
     return some (.ok (Lean.mkConst (c ++ nm) lvls))
   let rejected (why : String) : Outcome := .notFound s!"supplied proof rejected: {why}"
-  -- A proof Anchor finds counts only when it rests on the standard axioms. A search that
-  -- closes a goal with a library lemma proved by `native_decide` adds its theorem, but the
-  -- obligation stays open with the reason.
-  let nonstandard (n : Name) : TermElabM (List Name) := do
-    return ((← axiomsOf n).filter (!standardAxioms.contains ·)).toList
-  let record (nm : Name) (ty : Expr) (f : Found) : TermElabM (Except String Expr) := do
-    addThm (c ++ nm) lps ty f.proof
-    let bad ← nonstandard (c ++ nm)
-    if bad.isEmpty then return .ok (Lean.mkConst (c ++ nm) lvls)
-    return .error s!"the proof found rests on {bad}"
   -- Vacuous, else Nonvacuous. As with each hypothesis below, the two exclude each other and
   -- the cheap universal attempt goes before the existential search.
   let nvTy := ob ``Anchor.Spec.Nonvacuous #[] false
@@ -407,9 +446,6 @@ def analyze (c : Name) : TermElabM Report := do
       r := { r with hyps := hypReports, verdict :=
         if drops.isEmpty then base ++ ")" else base ++ s!"; removable {drops.toList})" }
     return { r with axioms := ← added.mapM fun d => return (d, ← axiomsOf d) }
-  -- A conclusion true of every model: every hypothesis is removable at once.
-  let conclAt (s : Expr) : TermElabM Expr := withLocalDeclD `m M fun m =>
-    mkForallFVars #[m] (mkApp (mkApp2 (Lean.mkConst ``Anchor.Spec.concl [lvl]) M s) m)
   let (tf?, tg) ← attempt (← conclAt e.spec) modelNames
   match tf? with
   | some f =>
@@ -494,7 +530,7 @@ def analyzeUnbounded (c : Name) : TermElabM Report :=
 proved by hand under their names before `anchor_cert foo`. -/
 def addSpec (c : Name) : TermElabM Unit := do
   let lps : List Name := []
-  let (stmt, _) ← statementOf c
+  let (stmt, _, _) ← readStatement c
   match ← Extract.extract stmt with
   | .error u => throwError "anchor_spec: {u.describe}"
   | .ok e =>
