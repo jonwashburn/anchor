@@ -18,7 +18,7 @@ jobs:
           build-args: >-
             Anchor anchor AnchorTest.Planted AnchorTest.PlantedKey AnchorTest.Smoke
             AnchorTest.SHA256Test AnchorTest.SurfaceTest AnchorTest.PriceTest
-            AnchorTest.SuppliedTest AnchorTest.NativeTest AnchorTest.Findings
+            AnchorTest.SuppliedTest AnchorTest.NativeTest AnchorTest.Findings AnchorTest.Typed
 
       - name: Sign-off check rejects an empty file
         run: |

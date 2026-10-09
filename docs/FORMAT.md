@@ -59,6 +59,10 @@ The same notions exist over an arbitrary index type as `Anchor.Statement`.
 
 For each obligation Anchor tries, in order: a declaration already supplied under the obligation's name; for `Drop k`, the original proof term, when it is a lambda over every binder whose body and later binder types never use hypothesis `k`; then a search that builds candidate models from small literals and instances and closes the resulting goals with `decide`, `norm_num`, `simp`, `omega`, `linarith`, `positivity` and `grind`. When no small candidate works, Plausible's random testing proposes one, with a fixed seed. A universal goal (`Drop k`, `Vacuous`) goes to the same closers after `push_neg` and `intro`, then to `nlinarith`, `order` and `aesop`. Every attempt runs under a fixed heartbeat budget (`anchor.search.attemptHeartbeats` for a whole obligation), so the same input gives byte-identical output.
 
+### Definitions and opaque vocabulary
+
+A definition `def foo : Prop := body` states `body` and carries no proof, so the analysis is statement-only. A definition of a family, `def foo (x : α) : Prop := body`, is a predicate and is analysed as its type unless `set_option anchor.readFamilies true` is in effect, when it states `∀ x, body`. When the statement names `opaque` constants declared outside the trusted libraries (`Init`, `Std`, `Lean`, `Mathlib`, `Batteries`, `Aesop`, `Plausible` and Anchor itself), each becomes a leading universally quantified variable of its type, after unfolding the local definitions that reach them, directly or through other local definitions (`Anchor.Opaque.generalize`). The generalized statement asserts the original for every reading of the vocabulary, which is what a statement about undefined objects can assert. A model then includes a reading (`AssumptionA := fun _ => False`, `Inst := Nat`), and a hypothesis is load-bearing when some reading makes it matter. The report lists the vocabulary under `parameters`, by last name unless two constants or a binder share it. A theorem's proof is kept when, with the same constants abstracted, it type-checks against the generalized statement; otherwise the analysis is statement-only. The statement is analysed as written when an axiom declared outside the trusted libraries mentions its vocabulary (the vocabulary is then constrained, not free for every reading), or when the generalization does not type-check.
+
 ## 4. Verdicts
 
 | Verdict | Meaning |
@@ -68,8 +72,9 @@ For each obligation Anchor tries, in order: a declaration already supplied under
 | `VACUOUS` | `foo.anchorVacuous` was added |
 | `DECORATIVE [k, ...]` | a model exists, and `foo.anchorDrop_k` was added for each listed position |
 | `TRIVIAL CONCLUSION (...)` | `foo.anchorTrivial` was added: the conclusion holds of every model, so every hypothesis is removable |
-| `NO HYPOTHESES (no certificate)` | nothing to certify; the conclusion stands alone |
-| `NONVACUOUS, EVERY HYPOTHESIS LOAD-BEARING (statement only)` | no proof of the theorem is read (it is `sorry`), so `Holds` is unavailable; `Nonvacuous` and every `LoadBearing k` were proved |
+| `TRIVIAL CONCLUSION (true outright, with no hypotheses)` | `foo.anchorTrivial` was added: a statement read without a proof, with no hypotheses and no premises, holds of every model, so it says nothing (the `PaperClaim : Prop := True` placeholder, read directly or through an alias). A theorem with a proof and no hypotheses reads `NO HYPOTHESES (no certificate)` |
+| `NO HYPOTHESES (no certificate)` | nothing to certify; the conclusion stands alone and was not shown to hold outright |
+| `NONVACUOUS, EVERY HYPOTHESIS LOAD-BEARING (statement only)` | no proof of the theorem is read (it is `sorry`, a definition of a proposition, or a statement over opaque vocabulary), so `Holds` is unavailable; `Nonvacuous` and every `LoadBearing k` were proved |
 | `UNCERTIFIED (...)` | some obligation is neither proved nor refuted; the parenthesis lists which, and any hypotheses proved removable |
 | `UNSUPPORTED (...)` | the statement could not be extracted; the reason is given |
 
@@ -77,7 +82,7 @@ Every verdict except `NO HYPOTHESES`, `UNCERTIFIED` and `UNSUPPORTED` is a claim
 
 ## 5. The report
 
-`#anchor_json foo` prints one JSON object per statement with keys `decl`, `supported`, `reason`, `universes`, `model`, `premises`, `hypotheses` (each with `text`, `load_bearing` and `drop`), `conclusion`, `holds`, `nonvacuous`, `vacuous`, `trivial_conclusion`, `verdict` and `axioms`. Each obligation is `{"status":"proved","method":...}`, `{"status":"open","goal":...}` or `{"status":"skipped"}`, where the method is `supplied`, `proof term` or `search`. `axioms` lists every added declaration with its `#print axioms` output.
+`#anchor_json foo` prints one JSON object per statement with keys `decl`, `supported`, `reason`, `universes`, `model`, `premises`, `parameters` (opaque constants read as universally quantified variables), `hypotheses` (each with `text`, `load_bearing` and `drop`), `conclusion`, `holds`, `nonvacuous`, `vacuous`, `trivial_conclusion`, `verdict` and `axioms`. Each obligation is `{"status":"proved","method":...}`, `{"status":"open","goal":...}` or `{"status":"skipped"}`, where the method is `supplied`, `proof term` or `search`. `axioms` lists every added declaration with its `#print axioms` output.
 
 ## 6. Pinned definitions
 
