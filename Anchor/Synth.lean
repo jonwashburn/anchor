@@ -184,6 +184,9 @@ def candidates (α : Expr) : MetaM (Array Term) := do
       return #[← constFun (← `(True)), ← constFun (← `(False))]
     if cod.isSort then
       return #[← constFun (← `(Nat)), ← constFun (← `(Unit))]
+    -- Constant functions of several arguments come first. The unary candidates elaborate at
+    -- such a type only through the pointwise instances (`(1 : ℕ → ℝ)`), which the closers do
+    -- not reduce, so a reading such as `Regret := fun _ _ => 1` is found only this way.
     let mut consts : Array Term := #[]
     if arity ≥ 2 then
       consts := #[← constFun (← `(0)), ← constFun (← `(1)), ← constFun (← `(-1)),

@@ -38,6 +38,10 @@ register_option anchor.json : Bool := {
   defValue := false
   descr := "anchor_cert reports as one line of JSON instead of text" }
 
+register_option anchor.readFamilies : Bool := {
+  defValue := false
+  descr := "read `def foo (x : α) : Prop := body` as the claim `∀ x, body`" }
+
 /-- What happened to one obligation. -/
 inductive Outcome where
   | proved (method : String) (detail : String)
@@ -255,6 +259,7 @@ def statementOf (c : Name) : MetaM (Expr × Option Expr) := do
       let usesSorry := (d.value.find? (·.isConstOf ``sorryAx)).isSome
       return (inst d.type, if usesSorry then none else some (Lean.mkConst c us))
     if d.type.isProp then return (inst d.value, none)
+    unless anchor.readFamilies.get (← getOptions) do return (inst d.type, none)
     let family ← forallTelescope (inst d.type) fun xs cod => do
       if cod.isProp then
         return some (← mkForallFVars xs (mkAppN (inst d.value) xs).headBeta)
@@ -264,13 +269,17 @@ def statementOf (c : Name) : MetaM (Expr × Option Expr) := do
   | i => return (inst i.type, none)
 
 /-- `statementOf`, with opaque vocabulary read as parameters when the statement has any. The
-third component lists that vocabulary; when it is nonempty no proof is read, since a proof of
-the statement as written is not a proof of the generalized one. -/
-def readStatement (c : Name) : MetaM (Expr × Option Expr × Array Name) := do
+third component lists that vocabulary; the fourth is the proof term the hypotheses are read
+from. A proof is kept only when it carries over to the generalized statement. -/
+def readStatement (c : Name) : MetaM (Expr × Option Expr × Array Name × Option Expr) := do
   let (stmt, proof?) ← statementOf c
-  match ← Opaque.generalize stmt with
-  | some (g, cs) => return (g, none, cs)
-  | none => return (stmt, proof?, #[])
+  let info ← getConstInfo c
+  let value? := match proof?, info.value? with
+    | some _, some v => some (v.instantiateLevelParams info.levelParams (analysisLevels info))
+    | _, _ => none
+  match ← Opaque.generalize stmt value? with
+  | some (g, cs, p?) => return (g, p?, cs, p?)
+  | none => return (stmt, proof?, #[], value?)
 
 /-- Add a theorem to the environment; the kernel checks it here. -/
 def addThm (name : Name) (lps : List Name) (type value : Expr) : TermElabM Unit := do
@@ -281,7 +290,7 @@ def analyze (c : Name) : TermElabM Report := do
   let info ← getConstInfo c
   let lps : List Name := []
   let lvls : List Level := []
-  let (stmt, proof?, vocab) ← readStatement c
+  let (stmt, proof?, vocab, proofValue?) ← readStatement c
   let mut r : Report :=
     { decl := c, universes := levelsText info, parameters := vocab.map toString }
   let res ← Extract.extract stmt
@@ -321,6 +330,8 @@ def analyze (c : Name) : TermElabM Report := do
   | none => r := { r with holds :=
       if vocab.isEmpty then "statement only: no proof is read"
       else "statement only: opaque vocabulary read as parameters" }
+  if !vocab.isEmpty && proof?.isSome then
+    r := { r with holds := s!"from the proof of {c}, with opaque vocabulary read as parameters" }
   let n := e.hyps.size
   let ob (head : Name) (args : Array Expr) (onLit : Bool) : Expr :=
     mkAppN (Lean.mkConst head [lvl]) (#[M, if onLit then e.spec else specC] ++ args)
@@ -338,10 +349,15 @@ def analyze (c : Name) : TermElabM Report := do
   let conclAt (s : Expr) : TermElabM Expr := withLocalDeclD `m M fun m =>
     mkForallFVars #[m] (mkApp (mkApp2 (Lean.mkConst ``Anchor.Spec.concl [lvl]) M s) m)
   if n == 0 then
-    -- With no hypothesis there is nothing to certify, but a conclusion that holds outright
-    -- (`True`, or a definition that unfolds to it) says nothing, and that is a finding.
+    -- With no hypothesis there is nothing to certify. A statement read without a proof and
+    -- without premises whose conclusion holds outright (`True`, or a definition that unfolds
+    -- to it) says nothing, and that is a finding. A theorem with a proof holds outright by
+    -- its proof, which is no finding.
+    r := { r with verdict := "NO HYPOTHESES (no certificate)" }
+    unless proof?.isNone && e.binders.all (!·.premise) do
+      return { r with axioms := ← added.mapM fun d => return (d, ← axiomsOf d) }
     let (tf?, tg) ← attempt (← conclAt e.spec) modelNames
-    r := { r with verdict := "NO HYPOTHESES (no certificate)", trivial := .notFound tg }
+    r := { r with trivial := .notFound tg }
     if let some f := tf? then
       match ← record `anchorTrivial (← conclAt specC) f with
       | .ok _ =>
@@ -412,12 +428,8 @@ def analyze (c : Name) : TermElabM Report := do
     | some (.ok _) => return (.proved "supplied" "", true)
     | some (.error why) => return (rejected why, false)
     | none => pure ()
-    let fromProof ← match info.value? with
-      | some v =>
-        if proof?.isSome then
-          Extract.dropFromProof? e (v.instantiateLevelParams info.levelParams
-            (analysisLevels info)) k
-        else pure none
+    let fromProof ← match proofValue? with
+      | some v => Extract.dropFromProof? e v k
       | none => pure none
     -- The proof term rests on whatever the declaration's own proof rests on.
     if let some pf := fromProof then

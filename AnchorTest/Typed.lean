@@ -88,11 +88,68 @@ def via_def : Prop :=
 
 #expect_verdict via_def "NONVACUOUS, EVERY HYPOTHESIS LOAD-BEARING" params 3
 
-/-! ## A definition of a family of propositions -/
+/-- A definition reaching the vocabulary only through another local definition is unfolded
+all the way, and the constant used directly beside it is abstracted with the rest. -/
+noncomputable def r1 (T : ℝ) (θ : Inst) : ℝ := Regret T θ / C
+
+noncomputable def r2 (T : ℝ) (θ : Inst) : ℝ := r1 T θ + 0
+
+def via_two : Prop :=
+  ∀ (T : ℝ) (θ : Inst), 0 < C → 0 < r2 T θ → 0 < r2 T θ + C
+
+#expect_verdict via_two "NONVACUOUS, EVERY HYPOTHESIS LOAD-BEARING" params 3
+
+-- Two constants with the same last name stay two parameters.
+namespace Left
+opaque K : ℝ
+end Left
+
+namespace Right
+opaque K : ℝ
+end Right
+
+def two_K : Prop := 0 < Left.K → 0 < Right.K → 0 < Left.K + Right.K
+
+#expect_verdict two_K "NONVACUOUS, EVERY HYPOTHESIS LOAD-BEARING" params 2
+
+/-- A theorem over vocabulary whose proof works for every reading keeps its proof. -/
+opaque D : ℝ
+
+theorem carried (h : 0 < D) : 0 < D + 1 := by linarith
+
+#expect_verdict carried "CERTIFIED" params 1
+
+/-- An axiom constrains the vocabulary, so the statement is read as written, with its proof,
+and no reading of `Q` as `False` makes the hypothesis look load-bearing. The proof rests on
+the axiom, so its unused hypothesis is not certified removable either. -/
+opaque Q : ℕ → Prop
+
+axiom q0 : Q 0
+
+theorem uses_axiom (h : Q 0) : Q 0 ∧ True := ⟨q0, trivial⟩
+
+#expect_verdict uses_axiom "UNCERTIFIED" params 0
+#expect_not_verdict uses_axiom "NONVACUOUS"
+
+/-! ## Statements with no hypotheses -/
+
+/-- A theorem with no hypotheses holds by its proof; that is no finding. -/
+theorem comm_nohyp (a b : ℕ) : a + b = b + a := Nat.add_comm a b
+
+#expect_verdict comm_nohyp "NO HYPOTHESES" params 0
+
+/-! ## A definition of a family of propositions, read as a claim only when asked -/
 
 def family (n : ℕ) : Prop := 0 < n → 0 < n * n
 
+set_option anchor.readFamilies true in
 #expect_verdict family "NONVACUOUS, EVERY HYPOTHESIS LOAD-BEARING" params 0
+
+/-- A predicate is not a claim: by default it is not read as `∀ n, 0 ≤ n`. -/
+def NonNeg (n : ℕ) : Prop := 0 ≤ n
+
+#expect_not_verdict NonNeg "TRIVIAL"
+#expect_not_verdict family "NONVACUOUS"
 
 /-! ## Unchanged: a theorem with no vocabulary keeps its proof -/
 
